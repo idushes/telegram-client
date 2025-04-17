@@ -88,6 +88,10 @@ func (s *Server) setupTelegramClient(ctx context.Context) error {
 		RetryInterval:  2 * time.Second,
 		MaxRetries:     5,
 		Middlewares:    []telegram.Middleware{},
+		UpdateHandler: telegram.UpdateHandlerFunc(func(ctx context.Context, updates tg.UpdatesClass) error {
+			go s.handleTelegramUpdates(context.Background(), updates)
+			return nil
+		}),
 	}
 
 	// Создаем Telegram клиент с хранилищем сессии и улучшенными опциями

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gotd/td/telegram"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -31,6 +32,9 @@ type Server struct {
 	ETCDEndpoint string       // New field for ETCD endpoint
 	ClientReady  bool         // Флаг готовности клиента
 	ClientMutex  sync.RWMutex // Мьютекс для безопасного доступа к клиенту
+
+	// Добавляем карту для хранения активных клиентских сессий
+	clientSessions sync.Map // Хранит ID активных сессий клиентов
 }
 
 // NewServer создает новый экземпляр Server
@@ -109,6 +113,9 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Запускаем мониторинг состояния клиента
 	go s.monitorClientStatus(clientCtx)
+
+	// Настраиваем перехват сессий клиентов
+	s.setupSessionInterception()
 
 	// Запускаем MCP сервер с SSE
 	log.Printf("Starting MCP server on port %s", s.Port)
@@ -263,8 +270,92 @@ func (s *Server) IsClientReady() bool {
 	return s.ClientReady
 }
 
+// RegisterClientSession регистрирует новую клиентскую сессию
+func (s *Server) RegisterClientSession(sessionID string) {
+	s.clientSessions.Store(sessionID, true)
+	log.Printf("Registered client session: %s", sessionID)
+}
+
+// UnregisterClientSession удаляет клиентскую сессию
+func (s *Server) UnregisterClientSession(sessionID string) {
+	s.clientSessions.Delete(sessionID)
+	log.Printf("Unregistered client session: %s", sessionID)
+}
+
 // SendNotification отправляет уведомление клиентам MCP
 func (s *Server) SendNotification(method string, params map[string]interface{}) {
-	// Просто логируем уведомление
-	log.Printf("Notification: %s, Params: %v", method, params)
+	// Логируем уведомление
+	log.Printf("Sending notification: %s, Params: %v", method, params)
+
+	// Проверяем, что SSEServer существует
+	if s.SSEServer == nil {
+		log.Printf("SSEServer is nil, can't send notification")
+		return
+	}
+
+	// Создаем структуру уведомления в формате JSON-RPC
+	notification := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	}
+
+	// Если у нас есть указанный ID сессии, отправляем только ему
+	if s.SessionID != "" {
+		err := s.SSEServer.SendEventToSession(s.SessionID, notification)
+		if err != nil {
+			log.Printf("Failed to send notification to session %s: %v", s.SessionID, err)
+		}
+		return
+	}
+
+	// Счетчик успешных отправок
+	successCount := 0
+
+	// Отправляем уведомление всем зарегистрированным клиентам
+	s.clientSessions.Range(func(key, value interface{}) bool {
+		sessionID, ok := key.(string)
+		if !ok {
+			return true // продолжаем обход
+		}
+
+		err := s.SSEServer.SendEventToSession(sessionID, notification)
+		if err != nil {
+			log.Printf("Failed to send notification to session %s: %v", sessionID, err)
+		} else {
+			successCount++
+		}
+		return true
+	})
+
+	if successCount > 0 {
+		log.Printf("Notification sent to %d clients", successCount)
+	} else {
+		log.Printf("No clients received notification")
+	}
+}
+
+// setupSessionInterception настраивает перехват подключения и отключения клиентов
+func (s *Server) setupSessionInterception() {
+	// Добавляем обработчик для отслеживания инициализации сессий
+	s.MCPServer.AddNotificationHandler("notifications/initialized", func(ctx context.Context, notification mcp.JSONRPCNotification) {
+		// Получаем ID сессии из текущего контекста
+		session := server.ClientSessionFromContext(ctx)
+		if session != nil {
+			sessionID := session.SessionID()
+			// Регистрируем сессию
+			s.RegisterClientSession(sessionID)
+
+			log.Printf("New client connected: %s", sessionID)
+
+			// Если есть новые сообщения, можно отправить уведомление о них
+			s.SendNotification("telegram/client_connected", map[string]interface{}{
+				"session_id": sessionID,
+				"timestamp":  time.Now().Unix(),
+			})
+
+			// Отправим все последние сообщения этому клиенту
+			// Здесь можно добавить логику, если нужно отправить исторические сообщения
+		}
+	})
 }
