@@ -61,6 +61,29 @@ The ETCD key prefix used is `telegram/sessions/` followed by an MD5 hash of the 
   - Parameters: `{"code": "12345"}`
   - Response: Success/Error message
 
+### Information Tools
+
+- `telegram_get_groups`: Get list of Telegram groups
+  - Parameters: `{"limit": 50}` (optional, defaults to 50)
+  - Response: JSON object with list of groups and count
+  - Example response: 
+    ```json
+    {
+      "groups": [
+        {
+          "id": 12345678,
+          "title": "Group Name",
+          "type": "megagroup",
+          "username": "groupname",
+          "members": 100,
+          "verified": false,
+          "restricted": false
+        }
+      ],
+      "count": 1
+    }
+    ```
+
 ## Authentication Flow
 
 1. The application attempts to authenticate with Telegram on startup
