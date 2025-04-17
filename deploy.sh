@@ -14,12 +14,15 @@ echo "🔑 Убедитесь, что вы авторизованы в Docker Hu
 echo "===== Настройка Docker Buildx ====="
 docker buildx use cloud-dushes-builder
 
+# Получаем версию из git тега или используем текущую дату как версию
+VERSION=$(date +"%Y.%m.%d-%H.%M")
 echo "===== Начинаем мультиплатформенную сборку и публикацию ====="
+echo "Версия для публикации: $VERSION"
+
 docker buildx build --platform linux/amd64,linux/arm64 \
   -t dushes/telegram-client:latest \
+  -t dushes/telegram-client:$VERSION \
   --push .
 
-echo "===== Проверка опубликованных образов ====="
-docker buildx imagetools inspect dushes/telegram-client:latest
 
 echo "✅ Деплой успешно завершен!" 
