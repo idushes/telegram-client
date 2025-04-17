@@ -21,10 +21,14 @@ FROM alpine:latest
 # Install required packages
 RUN apk --no-cache add ca-certificates
 
-WORKDIR /root/
+# Set the working directory
+WORKDIR /app
 
 # Copy the binary from the builder stage
 COPY --from=builder /app/telegram-client .
+
+# Create session directory
+RUN mkdir -p /app/session && chmod 700 /app/session
 
 # Expose the MCP server port
 EXPOSE 8080
