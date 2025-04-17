@@ -33,6 +33,14 @@ func (s *Server) registerGroupTools() {
 		mcp.WithNumber("limit", mcp.DefaultNumber(50)),
 	)
 
-	// Регистрируем инструмент с обработчиком
+	// Создаем инструмент для получения сообщений из группы
+	getGroupMessagesTool := mcp.NewTool("get_group_messages",
+		mcp.WithDescription("Get messages from a Telegram group by ID"),
+		mcp.WithNumber("group_id", mcp.Required()),
+		mcp.WithNumber("limit", mcp.DefaultNumber(20)),
+	)
+
+	// Регистрируем инструменты с обработчиками
 	s.MCPServer.AddTool(getGroupsTool, s.handleGetGroups)
+	s.MCPServer.AddTool(getGroupMessagesTool, s.handleGetGroupMessages)
 }

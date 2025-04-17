@@ -84,6 +84,40 @@ The ETCD key prefix used is `telegram/sessions/` followed by an MD5 hash of the 
     }
     ```
 
+- `get_group_messages`: Get messages from a Telegram group by ID
+  - Parameters: 
+    - `group_id`: ID of the group (required, can be a positive or negative number)
+    - `limit`: Maximum number of messages to return (optional, defaults to 20)
+  - Response: JSON object with list of messages and count
+  - Example response:
+    ```json
+    {
+      "messages": [
+        {
+          "id": 12345,
+          "date": 1634567890,
+          "text": "Hello world!",
+          "out": false,
+          "mentioned": false,
+          "media": false,
+          "from": {
+            "type": "user",
+            "id": 123456789
+          }
+        },
+        {
+          "id": 12344,
+          "date": 1634567880,
+          "type": "service_message",
+          "action": "user_added"
+        }
+      ],
+      "count": 2,
+      "group_id": 1789380160
+    }
+    ```
+  - Note: To get the group ID, first use the `get_groups` tool to list all available groups
+
 ## Authentication Flow
 
 1. The application attempts to authenticate with Telegram on startup
