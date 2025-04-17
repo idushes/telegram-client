@@ -88,7 +88,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 		PhoneNumber:  phoneNumber,
 		AppID:        appID,
 		AppHash:      appHash,
-		RetryDelay:   5 * time.Second,
+		RetryDelay:   30 * time.Second,
 		Port:         port,
 		CodeReady:    make(chan struct{}),
 		ETCDEndpoint: etcdEndpoint, // Сохраняем ETCD endpoint
