@@ -16,13 +16,13 @@ import (
 // registerTools регистрирует инструменты для взаимодействия с MCP сервером
 func (s *Server) registerTools() {
 	// Создаем определения инструментов только для PIN-кода
-	sendCodeTool := mcp.NewTool("telegram_send_code",
+	sendCodeTool := mcp.NewTool("send_code",
 		mcp.WithDescription("Send authentication code for Telegram"),
 		mcp.WithString("code", mcp.Required()),
 	)
 
 	// Создаем инструмент для получения списка групп
-	getGroupsTool := mcp.NewTool("telegram_get_groups",
+	getGroupsTool := mcp.NewTool("get_groups",
 		mcp.WithDescription("Get list of Telegram groups"),
 		mcp.WithNumber("limit", mcp.DefaultNumber(50)),
 	)

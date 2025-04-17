@@ -57,13 +57,13 @@ The ETCD key prefix used is `telegram/sessions/` followed by an MD5 hash of the 
 
 ### Authentication Tools
 
-- `telegram_send_code`: Send authentication code
+- `send_code`: Send authentication code
   - Parameters: `{"code": "12345"}`
   - Response: Success/Error message
 
 ### Information Tools
 
-- `telegram_get_groups`: Get list of Telegram groups
+- `get_groups`: Get list of Telegram groups
   - Parameters: `{"limit": 50}` (optional, defaults to 50)
   - Response: JSON object with list of groups and count
   - Example response: 
@@ -87,7 +87,7 @@ The ETCD key prefix used is `telegram/sessions/` followed by an MD5 hash of the 
 ## Authentication Flow
 
 1. The application attempts to authenticate with Telegram on startup
-2. If a code is required, the application waits for the `telegram_send_code` tool to be called
+2. If a code is required, the application waits for the `send_code` tool to be called
 3. If authentication fails, the application retries after a 5-second delay
 
 
@@ -102,7 +102,7 @@ This will:
 - If `MCP_SERVER_PORT` is not provided, the application will fail to start
 - If Telegram credentials are not provided, the application will fail to start
 - Authentication errors will trigger a retry after 5 seconds
-- If the authentication code is not being requested, calling `telegram_send_code` will result in an error
+- If the authentication code is not being requested, calling `send_code` will result in an error
 
 ## Libraries Used
 

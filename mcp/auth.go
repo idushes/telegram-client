@@ -246,7 +246,7 @@ func (s *Server) waitForCode(ctx context.Context, sentCode *tg.AuthSentCode) (st
 	s.AuthMutex.Unlock()
 
 	// Отправляем уведомление
-	s.SendNotification("telegram_auth_code_needed", map[string]interface{}{
+	s.SendNotification("auth_code_needed", map[string]interface{}{
 		"phone": s.PhoneNumber,
 		"type":  sentCode.Type.TypeName(),
 	})
@@ -254,7 +254,7 @@ func (s *Server) waitForCode(ctx context.Context, sentCode *tg.AuthSentCode) (st
 	// Выводим информацию
 	log.Printf("Telegram authentication code needed for phone: %s", s.PhoneNumber)
 	log.Printf("Authentication code type: %s", sentCode.Type.TypeName())
-	log.Printf("To provide the code, use the telegram_send_code tool with {\"code\": \"YOUR_CODE\"}")
+	log.Printf("To provide the code, use the send_code tool with {\"code\": \"YOUR_CODE\"}")
 
 	// Ждем пока код будет предоставлен через вызов инструмента
 	select {
@@ -283,7 +283,7 @@ func (s *Server) attemptAuth(ctx context.Context) error {
 				log.Printf("Authentication error: %v", err)
 
 				// Отправляем уведомление об ошибке
-				s.SendNotification("telegram_auth_error", map[string]interface{}{
+				s.SendNotification("auth_error", map[string]interface{}{
 					"error": err.Error(),
 				})
 
@@ -297,7 +297,7 @@ func (s *Server) attemptAuth(ctx context.Context) error {
 		log.Println("Authentication successful!")
 
 		// Отправляем уведомление об успешной авторизации
-		s.SendNotification("telegram_auth_success", map[string]interface{}{
+		s.SendNotification("auth_success", map[string]interface{}{
 			"success": true,
 		})
 
