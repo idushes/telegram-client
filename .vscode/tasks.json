@@ -1,0 +1,49 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Telegram Client",
+            "type": "shell",
+            "command": "make build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$go"]
+        },
+        {
+            "label": "Run Telegram Client",
+            "type": "shell",
+            "command": "${workspaceFolder}/build/telegram-client",
+            "group": "test",
+            "problemMatcher": [],
+            "options": {
+                "env": {
+                    "MCP_SERVER_PORT": "8080",
+                    "PHONE": "+971588474020",
+                    "APP_ID": "23508180",
+                    "APP_HASH": "2d6fe655a9f0bac481781829328f9104"
+                }
+            },
+            "dependsOn": [
+                "Build Telegram Client"
+            ]
+        },
+        {
+            "label": "Build and Run",
+            "type": "shell",
+            "command": "./run.sh",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean",
+            "type": "shell",
+            "command": "make clean",
+            "problemMatcher": []
+        }
+    ]
+} 
