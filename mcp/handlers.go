@@ -80,14 +80,22 @@ func (s *Server) handleGetGroups(ctx context.Context, req mcp.CallToolRequest) (
 	}
 
 	// Получаем параметр limit (по умолчанию 50)
-	limit := 50
+	userLimit := 50
 	if limitParam, ok := req.Params.Arguments["limit"]; ok {
 		if limitValue, ok := limitParam.(float64); ok {
-			limit = int(limitValue)
+			userLimit = int(limitValue)
 		}
 	}
 
-	log.Printf("Getting list of Telegram groups with limit %d", limit)
+	// Telegram API возвращает примерно в 2 раза больше элементов, чем запрошено
+	// Корректируем запрашиваемый лимит, чтобы получить примерно то количество, которое запросил пользователь
+	apiLimit := userLimit
+	if userLimit > 0 {
+		// Если пользователь указал конкретный лимит, делим его на 2 (но не меньше 1)
+		apiLimit = max(1, userLimit/2)
+	}
+
+	log.Printf("Getting list of Telegram groups with user limit %d (API limit: %d)", userLimit, apiLimit)
 
 	// Создаем контекст с таймаутом для запроса
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -170,7 +178,7 @@ func (s *Server) handleGetGroups(ctx context.Context, req mcp.CallToolRequest) (
 
 		// Создаем запрос на получение диалогов
 		request := &tg.MessagesGetDialogsRequest{
-			Limit:      limit,
+			Limit:      apiLimit, // Используем скорректированный лимит для API
 			OffsetDate: 0,
 			OffsetID:   0,
 			OffsetPeer: &tg.InputPeerEmpty{},
@@ -206,6 +214,10 @@ func (s *Server) handleGetGroups(ctx context.Context, req mcp.CallToolRequest) (
 				group := extractGroupInfo(chat)
 				if group != nil {
 					groups = append(groups, group)
+					// Проверяем, не превысили ли мы запрошенный пользователем лимит
+					if userLimit > 0 && len(groups) >= userLimit {
+						break
+					}
 				}
 			}
 		case *tg.MessagesDialogsSlice:
@@ -214,6 +226,10 @@ func (s *Server) handleGetGroups(ctx context.Context, req mcp.CallToolRequest) (
 				group := extractGroupInfo(chat)
 				if group != nil {
 					groups = append(groups, group)
+					// Проверяем, не превысили ли мы запрошенный пользователем лимит
+					if userLimit > 0 && len(groups) >= userLimit {
+						break
+					}
 				}
 			}
 		default:
@@ -221,7 +237,7 @@ func (s *Server) handleGetGroups(ctx context.Context, req mcp.CallToolRequest) (
 			return mcp.NewToolResultErrorFromErr("Unknown dialogs response type", errors.New("unexpected response type")), nil
 		}
 
-		log.Printf("Found %d groups", len(groups))
+		log.Printf("Found %d groups (requested limit: %d)", len(groups), userLimit)
 
 		// Сериализуем результат в JSON
 		resultObj := map[string]interface{}{
@@ -291,3 +307,11 @@ func extractGroupInfo(chat tg.ChatClass) map[string]interface{} {
 }
 
 // isFatalClientError теперь определена в файле auth.go
+
+// max возвращает наибольшее из двух целых чисел
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
