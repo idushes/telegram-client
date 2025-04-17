@@ -28,10 +28,18 @@ WORKDIR /app
 COPY --from=builder /app/telegram-client .
 
 # Create session directory
+# This is used when ETCD_ENDPOINT is not provided
 RUN mkdir -p /app/session && chmod 700 /app/session
 
 # Expose the MCP server port
 EXPOSE 8080
+
+# Environment variables can be set at runtime:
+# - MCP_SERVER_PORT: Port for the MCP server
+# - PHONE: Phone number for Telegram authentication
+# - APP_ID: Telegram API App ID
+# - APP_HASH: Telegram API App Hash
+# - ETCD_ENDPOINT: Optional ETCD endpoint for session storage
 
 # Command to run the executable
 CMD ["./telegram-client"] 

@@ -15,19 +15,20 @@ import (
 
 // Server представляет нашу реализацию MCP сервера для Telegram клиента
 type Server struct {
-	MCPServer   *server.MCPServer
-	SSEServer   *server.SSEServer
-	Client      *telegram.Client
-	Code        string
-	AuthState   string // может быть "none", "awaiting_code"
-	AuthMutex   sync.Mutex
-	CodeReady   chan struct{}
-	PhoneNumber string
-	AppID       int
-	AppHash     string
-	RetryDelay  time.Duration
-	Port        string
-	SessionID   string
+	MCPServer    *server.MCPServer
+	SSEServer    *server.SSEServer
+	Client       *telegram.Client
+	Code         string
+	AuthState    string // может быть "none", "awaiting_code"
+	AuthMutex    sync.Mutex
+	CodeReady    chan struct{}
+	PhoneNumber  string
+	AppID        int
+	AppHash      string
+	RetryDelay   time.Duration
+	Port         string
+	SessionID    string
+	ETCDEndpoint string // New field for ETCD endpoint
 }
 
 // NewServer создает новый экземпляр Server
@@ -65,6 +66,9 @@ func NewServer(ctx context.Context) (*Server, error) {
 		}
 	}
 
+	// Проверяем наличие ETCD endpoint
+	etcdEndpoint := os.Getenv("ETCD_ENDPOINT")
+
 	// Создаем MCP сервер
 	mcpServer := server.NewMCPServer("telegram-client", "1.0.0")
 
@@ -72,15 +76,16 @@ func NewServer(ctx context.Context) (*Server, error) {
 	sseServer := server.NewSSEServer(mcpServer)
 
 	s := &Server{
-		MCPServer:   mcpServer,
-		SSEServer:   sseServer,
-		AuthState:   "none",
-		PhoneNumber: phoneNumber,
-		AppID:       appID,
-		AppHash:     appHash,
-		RetryDelay:  5 * time.Second,
-		Port:        port,
-		CodeReady:   make(chan struct{}),
+		MCPServer:    mcpServer,
+		SSEServer:    sseServer,
+		AuthState:    "none",
+		PhoneNumber:  phoneNumber,
+		AppID:        appID,
+		AppHash:      appHash,
+		RetryDelay:   5 * time.Second,
+		Port:         port,
+		CodeReady:    make(chan struct{}),
+		ETCDEndpoint: etcdEndpoint, // Сохраняем ETCD endpoint
 	}
 
 	// Регистрируем инструменты для аутентификации
