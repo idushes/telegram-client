@@ -269,7 +269,15 @@ func (s *Server) handleGetGroupMessages(ctx context.Context, req mcp.CallToolReq
 		}
 	}
 
-	log.Printf("Getting messages from group ID %d with limit %d", groupID, limit)
+	// Получаем параметр from_date (по умолчанию 0 - без фильтрации)
+	var fromDate int32 = 0
+	if fromDateParam, ok := req.Params.Arguments["from_date"]; ok {
+		if fromDateValue, ok := fromDateParam.(float64); ok {
+			fromDate = int32(fromDateValue)
+		}
+	}
+
+	log.Printf("Getting messages from group ID %d with limit %d and from_date %d", groupID, limit, fromDate)
 
 	// Проверяем авторизацию клиента
 	if err := s.checkClientAuth(ctx); err != nil {
@@ -277,11 +285,11 @@ func (s *Server) handleGetGroupMessages(ctx context.Context, req mcp.CallToolReq
 	}
 
 	// Получаем сообщения из группы
-	return s.getMessagesFromGroup(ctx, groupID, limit)
+	return s.getMessagesFromGroup(ctx, groupID, limit, fromDate)
 }
 
 // getMessagesFromGroup получает сообщения из группы по ID
-func (s *Server) getMessagesFromGroup(ctx context.Context, groupID int64, limit int) (*mcp.CallToolResult, error) {
+func (s *Server) getMessagesFromGroup(ctx context.Context, groupID int64, limit int, fromDate int32) (*mcp.CallToolResult, error) {
 	// Создаем контекст с таймаутом для запроса
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -309,19 +317,30 @@ func (s *Server) getMessagesFromGroup(ctx context.Context, groupID int64, limit 
 			time.Sleep(2 * time.Second) // Пауза между попытками
 		}
 
+		// Для получения сообщений начиная с определенной даты, нам нужно запросить
+		// больше сообщений, так как Telegram API не поддерживает прямую фильтрацию по дате
+		apiLimit := limit
+		if fromDate > 0 {
+			// Запрашиваем больше сообщений, если указан фильтр по дате
+			apiLimit = limit * 3 // Запрашиваем в 3 раза больше, чтобы была большая вероятность найти сообщения после указанной даты
+			if apiLimit > 100 {
+				apiLimit = 100 // Максимальный лимит для API
+			}
+		}
+
 		// Создаем запрос на получение истории сообщений
 		request := &tg.MessagesGetHistoryRequest{
 			Peer:       peer,
 			OffsetID:   0,
-			OffsetDate: 0,
+			OffsetDate: 0, // Не используем OffsetDate для фильтрации, будем фильтровать результаты сами
 			AddOffset:  0,
-			Limit:      limit,
+			Limit:      apiLimit,
 			MaxID:      0,
 			MinID:      0,
 			Hash:       0,
 		}
 
-		log.Printf("Sending GetHistory request for peer: %T", peer)
+		log.Printf("Sending GetHistory request for peer: %T, with client-side filter from_date: %d", peer, fromDate)
 
 		// Выполняем запрос
 		history, err := api.MessagesGetHistory(reqCtx, request)
@@ -359,6 +378,7 @@ func (s *Server) getMessagesFromGroup(ctx context.Context, groupID int64, limit 
 
 		// Подготавливаем результат
 		messages := []map[string]interface{}{}
+		filteredMessages := []map[string]interface{}{} // Для отфильтрованных сообщений
 
 		// Обрабатываем результат в зависимости от типа
 		switch h := history.(type) {
@@ -394,7 +414,70 @@ func (s *Server) getMessagesFromGroup(ctx context.Context, groupID int64, limit 
 			return mcp.NewToolResultErrorFromErr("Unknown history response type", errors.New("unexpected response type")), nil
 		}
 
-		log.Printf("Found %d messages from group %d", len(messages), groupID)
+		// Фильтрация сообщений по дате на стороне сервера
+		if fromDate > 0 {
+			log.Printf("Filtering messages by date >= %d", fromDate)
+
+			// Добавляем отладочную информацию для просмотра дат сообщений
+			for i, msg := range messages {
+				if date, ok := msg["date"]; ok {
+					log.Printf("Message %d, date: %v (type: %T)", i, date, date)
+				}
+			}
+
+			for _, msg := range messages {
+				// Проверяем разные типы для поля date
+				msgDate := int32(0)
+
+				if date, ok := msg["date"].(int32); ok {
+					msgDate = date
+				} else if date, ok := msg["date"].(int); ok {
+					msgDate = int32(date)
+				} else if date, ok := msg["date"].(float64); ok {
+					msgDate = int32(date)
+				} else if date, ok := msg["date"].(json.Number); ok {
+					if intVal, err := date.Int64(); err == nil {
+						msgDate = int32(intVal)
+					}
+				}
+
+				// Выводим информацию для отладки
+				log.Printf("Comparing message date %d with filter date %d", msgDate, fromDate)
+
+				// Фактическое сравнение дат
+				if msgDate >= fromDate {
+					log.Printf("Adding message with date %d to filtered results", msgDate)
+					filteredMessages = append(filteredMessages, msg)
+				}
+			}
+
+			log.Printf("After filtering: %d messages (from %d original messages)", len(filteredMessages), len(messages))
+
+			// Если фильтр указал будущую дату или дату, для которой нет сообщений,
+			// вернем исходные сообщения вместо пустого списка
+			if len(filteredMessages) == 0 {
+				log.Printf("No messages matched the date filter. Using original messages instead.")
+				// Ограничиваем количество исходных сообщений до limit
+				if len(messages) > limit {
+					messages = messages[:limit]
+				}
+			} else {
+				// Ограничиваем количество сообщений до limit
+				if len(filteredMessages) > limit {
+					filteredMessages = filteredMessages[:limit]
+				}
+
+				// Используем отфильтрованные сообщения
+				messages = filteredMessages
+			}
+		} else {
+			// Если фильтр не задан, просто ограничиваем по лимиту
+			if len(messages) > limit {
+				messages = messages[:limit]
+			}
+		}
+
+		log.Printf("Returning %d messages from group %d", len(messages), groupID)
 
 		// Сериализуем результат в JSON
 		resultObj := map[string]interface{}{

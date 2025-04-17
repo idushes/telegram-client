@@ -38,6 +38,7 @@ func (s *Server) registerGroupTools() {
 		mcp.WithDescription("Get messages from a Telegram group by ID"),
 		mcp.WithNumber("group_id", mcp.Required()),
 		mcp.WithNumber("limit", mcp.DefaultNumber(20)),
+		mcp.WithNumber("from_date", mcp.DefaultNumber(0)),
 	)
 
 	// Регистрируем инструменты с обработчиками
