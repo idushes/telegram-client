@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"telegram-client/mcp"
 )
 
 func main() {
@@ -59,23 +61,14 @@ func main() {
 
 // runApp is the main application function
 func runApp(ctx context.Context) error {
-	log.Println("Application starting...")
+	log.Println("Telegram MTProto Client (MCP) starting...")
 
-	// Your application initialization here
-
-	// Simulating a long-running process
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Context cancelled, cleaning up...")
-			// Perform any cleanup operations here
-			time.Sleep(1 * time.Second) // Simulate cleanup work
-			return nil
-		case t := <-ticker.C:
-			fmt.Printf("Working... %s\n", t.Format(time.RFC3339))
-		}
+	// Create MCP server
+	mcpServer, err := mcp.NewServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
+
+	// Start the MCP server
+	return mcpServer.Start(ctx)
 }
