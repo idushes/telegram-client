@@ -12,10 +12,10 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o telegram-client .
+# Build the application with platform-specific flags
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o telegram-client .
 
-# Create a minimal image
+# Create a minimal image for the same architecture
 FROM alpine:latest
 
 # Install required packages
