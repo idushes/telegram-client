@@ -2,73 +2,124 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
-	"syscall"
-	"time"
+	"path/filepath"
 
-	"telegram-client/mcp"
+	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/auth"
+	"github.com/gotd/td/tg"
 )
 
-func main() {
-	// Create a context that we can cancel on interrupt
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// codeAuthenticator implements auth.CodeAuthenticator
+type codeAuthenticator struct{}
 
-	// Set up signal handling
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
-
-	// Run the application in a separate goroutine
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runApp(ctx)
-	}()
-
-	// Wait for either the app to finish or an interrupt signal
-	select {
-	case err := <-errCh:
-		if err != nil {
-			log.Printf("Application error: %v", err)
-			os.Exit(1)
-		}
-	case sig := <-signalCh:
-		log.Printf("Received signal: %v", sig)
-		log.Println("Shutting down gracefully...")
-
-		// Create a timeout context for shutdown
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-
-		// Cancel the main context to signal all operations to stop
-		cancel()
- 
-		// Wait for graceful shutdown or timeout
-		select {
-		case err := <-errCh:
-			if err != nil {
-				log.Printf("Error during shutdown: %v", err)
-			}
-		case <-shutdownCtx.Done():
-			log.Println("Shutdown timed out")
-		}
-	}
-
-	log.Println("Application stopped")
+func (ca *codeAuthenticator) Code(_ context.Context, _ *tg.AuthSentCode) (string, error) {
+	fmt.Print("Enter the code you received: ")
+	var code string
+	_, err := fmt.Scan(&code)
+	return code, err
 }
 
-// runApp is the main application function
-func runApp(ctx context.Context) error {
-	log.Println("Telegram MTProto Client (MCP) starting...")
+func main() {
+	// Parse command line flags
+	appID := flag.Int("app-id", 0, "Telegram app ID")
+	appHash := flag.String("app-hash", "", "Telegram app hash")
+	phone := flag.String("phone", "", "Phone number in international format")
+	sessionFile := flag.String("session-file", "tg-session.json", "Path to session file")
+	flag.Parse()
 
-	// Create MCP server
-	mcpServer, err := mcp.NewServer(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create MCP server: %w", err)
+	// Check if values are provided via flags or environment variables
+	if *appID == 0 {
+		if envID := os.Getenv("APP_ID"); envID != "" {
+			fmt.Sscanf(envID, "%d", appID)
+		}
 	}
 
-	// Start the MCP server
-	return mcpServer.Start(ctx)
+	if *appHash == "" {
+		*appHash = os.Getenv("APP_HASH")
+	}
+
+	if *phone == "" {
+		*phone = os.Getenv("PHONE")
+	}
+
+	// Validate required credentials
+	if *appID == 0 || *appHash == "" || *phone == "" {
+		fmt.Println("Error: Required parameters missing")
+		fmt.Println("Please provide app-id, app-hash, and phone via flags or environment variables")
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	// Convert to absolute path if necessary
+	if !filepath.IsAbs(*sessionFile) {
+		currentDir, err := os.Getwd()
+		if err != nil {
+			fmt.Printf("Failed to get current directory: %v\n", err)
+			os.Exit(1)
+		}
+		*sessionFile = filepath.Join(currentDir, *sessionFile)
+	}
+
+	fmt.Printf("Using session file: %s\n", *sessionFile)
+
+	// Create context with signal handling
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	// Create client
+	client := telegram.NewClient(*appID, *appHash, telegram.Options{
+		SessionStorage: &telegram.FileSessionStorage{
+			Path: *sessionFile,
+		},
+	})
+
+	// Run client in a separate goroutine
+	go func() {
+		err := client.Run(ctx, func(ctx context.Context) error {
+			// Setup auth flow with CodeOnly helper
+			flow := auth.NewFlow(
+				auth.CodeOnly(*phone, &codeAuthenticator{}),
+				auth.SendCodeOptions{},
+			)
+
+			// Try to authorize
+			fmt.Println("Authorizing...")
+			if err := client.Auth().IfNecessary(ctx, flow); err != nil {
+				fmt.Printf("Authentication error: %v\n", err)
+				os.Exit(1)
+			}
+
+			// Check successful authorization
+			status, err := client.Auth().Status(ctx)
+			if err != nil {
+				fmt.Printf("Failed to get auth status: %v\n", err)
+				os.Exit(1)
+			}
+
+			if !status.Authorized {
+				fmt.Println("Failed to authorize. Check credentials and try again.")
+				os.Exit(1)
+			}
+
+			fmt.Println("Successfully authenticated!")
+			fmt.Printf("Session saved to: %s\n", *sessionFile)
+			fmt.Println("Session file saved. Done!")
+
+			// Signal we're done
+			cancel()
+			return nil
+		})
+
+		if err != nil {
+			fmt.Printf("Error running client: %v\n", err)
+			os.Exit(1)
+		}
+	}()
+
+	// Wait for the client to finish or for an interrupt
+	<-ctx.Done()
 }
