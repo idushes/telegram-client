@@ -3,3 +3,4 @@ run.sh
 session
 .vscode/
 tg-session.json
+telegram-auth
