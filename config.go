@@ -16,6 +16,8 @@ const (
 	CommandHelp CommandType = "help"
 	// CommandTest тестовая команда
 	CommandTest CommandType = "test"
+	// CommandChats команда получения списка чатов
+	CommandChats CommandType = "chats"
 	// CommandUnknown неизвестная команда
 	CommandUnknown CommandType = "unknown"
 )
@@ -45,63 +47,71 @@ func ParseConfig() (Config, error) {
 		return Config{Command: CommandTest}, nil
 	}
 
-	// Проверяем, что команда sign-in
-	if command != CommandSignIn {
-		return Config{Command: CommandUnknown}, fmt.Errorf("unknown command: %s", command)
-	}
+	// Если это команда login или chats, нужно парсить аргументы
+	if command == CommandSignIn || command == CommandChats {
+		// Создаем новый набор флагов для аргументов
+		authFlags := flag.NewFlagSet(string(command), flag.ExitOnError)
+		appID := authFlags.Int("app-id", 0, "Telegram app ID")
+		appHash := authFlags.String("app-hash", "", "Telegram app hash")
+		phone := authFlags.String("phone", "", "Phone number in international format")
+		sessionFile := authFlags.String("session-file", "tg-session.json", "Path to session file")
+		help := authFlags.Bool("help", false, "Show help for command")
 
-	// Для команды sign-in нужно парсить аргументы авторизации
-	// Создаем новый набор флагов, чтобы парсить только аргументы после команды
-	authFlags := flag.NewFlagSet("sign-in", flag.ExitOnError)
-	appID := authFlags.Int("app-id", 0, "Telegram app ID")
-	appHash := authFlags.String("app-hash", "", "Telegram app hash")
-	phone := authFlags.String("phone", "", "Phone number in international format")
-	sessionFile := authFlags.String("session-file", "tg-session.json", "Path to session file")
-	help := authFlags.Bool("help", false, "Show help for sign-in command")
-
-	// Парсим аргументы после команды
-	err := authFlags.Parse(os.Args[2:])
-	if err != nil {
-		return Config{Command: CommandSignIn}, err
-	}
-
-	// Если запрошена справка sign-in
-	if *help {
-		printSignInHelp(authFlags)
-		os.Exit(0)
-	}
-
-	// Проверяем переменные окружения
-	if *appID == 0 {
-		if envID := os.Getenv("APP_ID"); envID != "" {
-			fmt.Sscanf(envID, "%d", appID)
+		// Парсим аргументы после команды
+		err := authFlags.Parse(os.Args[2:])
+		if err != nil {
+			return Config{Command: command}, err
 		}
+
+		// Если запрошена справка
+		if *help {
+			if command == CommandSignIn {
+				printSignInHelp(authFlags)
+			} else if command == CommandChats {
+				printChatsHelp(authFlags)
+			}
+			os.Exit(0)
+		}
+
+		// Проверяем переменные окружения
+		if *appID == 0 {
+			if envID := os.Getenv("APP_ID"); envID != "" {
+				fmt.Sscanf(envID, "%d", appID)
+			}
+		}
+
+		if *appHash == "" {
+			*appHash = os.Getenv("APP_HASH")
+		}
+
+		if *phone == "" {
+			*phone = os.Getenv("PHONE")
+		}
+
+		// Проверяем, что все необходимые параметры заданы
+		if *appID == 0 || *appHash == "" || *phone == "" {
+			if command == CommandSignIn {
+				printSignInHelp(authFlags)
+			} else if command == CommandChats {
+				printChatsHelp(authFlags)
+			}
+			return Config{Command: command}, fmt.Errorf("required parameters missing: provide app-id, app-hash, and phone via flags or environment variables")
+		}
+
+		// Создаем и возвращаем конфигурацию
+		return Config{
+			Command: command,
+			AuthConfig: AuthConfig{
+				AppID:       *appID,
+				AppHash:     *appHash,
+				Phone:       *phone,
+				SessionFile: *sessionFile,
+			},
+		}, nil
 	}
 
-	if *appHash == "" {
-		*appHash = os.Getenv("APP_HASH")
-	}
-
-	if *phone == "" {
-		*phone = os.Getenv("PHONE")
-	}
-
-	// Проверяем, что все необходимые параметры заданы
-	if *appID == 0 || *appHash == "" || *phone == "" {
-		printSignInHelp(authFlags)
-		return Config{Command: CommandSignIn}, fmt.Errorf("required parameters missing: provide app-id, app-hash, and phone via flags or environment variables")
-	}
-
-	// Создаем и возвращаем конфигурацию
-	return Config{
-		Command: CommandSignIn,
-		AuthConfig: AuthConfig{
-			AppID:       *appID,
-			AppHash:     *appHash,
-			Phone:       *phone,
-			SessionFile: *sessionFile,
-		},
-	}, nil
+	// Неизвестная команда
+	return Config{Command: CommandUnknown}, fmt.Errorf("unknown command: %s", command)
 }
 
 // PrintHelp выводит общую справку по приложению
@@ -112,28 +122,44 @@ func PrintHelp() {
 	fmt.Println("\nUsage:")
 	fmt.Println("  telegram-auth <command> [options]")
 	fmt.Println("\nCommands:")
-	fmt.Println("  sign-in    Authenticate with Telegram and save session file")
+	fmt.Println("  login      Authenticate with Telegram and save session file")
+	fmt.Println("  chats      Get list of all chats in JSON format")
 	fmt.Println("  help       Display this help message")
 	fmt.Println("  test       Run a test to check if application works properly")
 	fmt.Println("\nExamples:")
 	fmt.Println("  Sign in with command-line flags:")
-	fmt.Println("    ./telegram-auth sign-in --app-id=12345 --app-hash=abcdef1234567890abcdef --phone=+1234567890")
-	fmt.Println("\n  Sign in with environment variables:")
+	fmt.Println("    ./telegram-auth login --app-id=12345 --app-hash=abcdef1234567890abcdef --phone=+1234567890")
+	fmt.Println("\n  Get chats with environment variables:")
 	fmt.Println("    export APP_ID=12345")
 	fmt.Println("    export APP_HASH=abcdef1234567890abcdef")
 	fmt.Println("    export PHONE=+1234567890")
-	fmt.Println("    ./telegram-auth sign-in")
-	fmt.Println("\n  Show help for sign-in command:")
-	fmt.Println("    ./telegram-auth sign-in --help")
+	fmt.Println("    ./telegram-auth chats")
+	fmt.Println("\n  Show help for login command:")
+	fmt.Println("    ./telegram-auth login --help")
 }
 
-// printSignInHelp выводит справку по команде sign-in
+// printSignInHelp выводит справку по команде login
 func printSignInHelp(fs *flag.FlagSet) {
-	fmt.Println("Telegram Authentication Client - Sign In")
-	fmt.Println("---------------------------------------")
+	fmt.Println("Telegram Authentication Client - Login")
+	fmt.Println("-------------------------------------")
 	fmt.Println("Authenticate with Telegram and save session file.")
 	fmt.Println("\nUsage:")
-	fmt.Println("  telegram-auth sign-in [options]")
+	fmt.Println("  telegram-auth login [options]")
+	fmt.Println("\nOptions:")
+	fs.PrintDefaults()
+	fmt.Println("\nEnvironment Variables:")
+	fmt.Println("  APP_ID   - Telegram app ID")
+	fmt.Println("  APP_HASH - Telegram app hash")
+	fmt.Println("  PHONE    - Phone number in international format")
+}
+
+// printChatsHelp выводит справку по команде chats
+func printChatsHelp(fs *flag.FlagSet) {
+	fmt.Println("Telegram Authentication Client - Chats")
+	fmt.Println("------------------------------------")
+	fmt.Println("Get list of all chats in JSON format.")
+	fmt.Println("\nUsage:")
+	fmt.Println("  telegram-auth chats [options]")
 	fmt.Println("\nOptions:")
 	fs.PrintDefaults()
 	fmt.Println("\nEnvironment Variables:")

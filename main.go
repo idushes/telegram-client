@@ -23,6 +23,12 @@ func main() {
 			fmt.Printf("Authentication failed: %v\n", err)
 			os.Exit(1)
 		}
+	case CommandChats:
+		// Получение списка чатов
+		if err := runChats(config.AuthConfig); err != nil {
+			fmt.Printf("Failed to get chats: %v\n", err)
+			os.Exit(1)
+		}
 	case CommandHelp:
 		// Показать справку
 		PrintHelp()
@@ -45,4 +51,14 @@ func runSignIn(authConfig AuthConfig) error {
 
 	// Run authentication
 	return Authenticate(ctx, authConfig)
+}
+
+// runChats выполняет получение списка чатов
+func runChats(authConfig AuthConfig) error {
+	// Create context with signal handling
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	// Run chats retrieval
+	return GetChats(ctx, authConfig)
 }
