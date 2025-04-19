@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 )
 
 func main() {
@@ -33,6 +34,12 @@ func main() {
 		// Получение сообщений из чата
 		if err := runMessages(config.AuthConfig, config.ChatID, config.Limit); err != nil {
 			fmt.Printf("Failed to get messages: %v\n", err)
+			os.Exit(1)
+		}
+	case CommandEvents:
+		// Отслеживание событий Telegram
+		if err := runEvents(config.AuthConfig, config.Timeout); err != nil {
+			fmt.Printf("Failed to track events: %v\n", err)
 			os.Exit(1)
 		}
 	case CommandHelp:
@@ -77,4 +84,24 @@ func runMessages(authConfig AuthConfig, chatID int64, limit int) error {
 
 	// Run messages retrieval
 	return GetMessages(ctx, authConfig, chatID, limit)
+}
+
+// runEvents выполняет отслеживание событий Telegram
+func runEvents(authConfig AuthConfig, timeout int) error {
+	// Создаем контекст с обработкой сигналов
+	baseCtx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	// Если указан таймаут, создаем контекст с ограничением по времени
+	var ctx context.Context
+	if timeout > 0 {
+		var timeoutCancel context.CancelFunc
+		ctx, timeoutCancel = context.WithTimeout(baseCtx, time.Duration(timeout)*time.Second)
+		defer timeoutCancel()
+	} else {
+		ctx = baseCtx
+	}
+
+	// Запускаем отслеживание событий
+	return GetEvents(ctx, authConfig, timeout)
 }

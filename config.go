@@ -21,6 +21,8 @@ const (
 	CommandChats CommandType = "chats"
 	// CommandMessages команда получения сообщений из чата
 	CommandMessages CommandType = "messages"
+	// CommandEvents команда отслеживания событий Telegram
+	CommandEvents CommandType = "events"
 	// CommandUnknown неизвестная команда
 	CommandUnknown CommandType = "unknown"
 )
@@ -31,6 +33,7 @@ type Config struct {
 	AuthConfig AuthConfig
 	ChatID     int64 // ID чата для команды messages
 	Limit      int   // Ограничение на количество сообщений
+	Timeout    int   // Таймаут в секундах для команды events
 }
 
 // ParseConfig парсит команды и параметры командной строки
@@ -190,6 +193,63 @@ func ParseConfig() (Config, error) {
 		}, nil
 	}
 
+	// Если это команда events
+	if command == CommandEvents {
+		// Создаем новый набор флагов для аргументов
+		eventsFlags := flag.NewFlagSet(string(command), flag.ExitOnError)
+		appID := eventsFlags.Int("app-id", 0, "Telegram app ID")
+		appHash := eventsFlags.String("app-hash", "", "Telegram app hash")
+		phone := eventsFlags.String("phone", "", "Phone number in international format")
+		sessionFile := eventsFlags.String("session-file", "tg-session.json", "Path to session file")
+		timeout := eventsFlags.Int("timeout", 0, "Timeout in seconds (0 = infinite)")
+		help := eventsFlags.Bool("help", false, "Show help for command")
+
+		// Парсим аргументы после команды
+		err := eventsFlags.Parse(os.Args[2:])
+		if err != nil {
+			return Config{Command: command}, err
+		}
+
+		// Если запрошена справка
+		if *help {
+			printEventsHelp(eventsFlags)
+			os.Exit(0)
+		}
+
+		// Проверяем переменные окружения
+		if *appID == 0 {
+			if envID := os.Getenv("APP_ID"); envID != "" {
+				fmt.Sscanf(envID, "%d", appID)
+			}
+		}
+
+		if *appHash == "" {
+			*appHash = os.Getenv("APP_HASH")
+		}
+
+		if *phone == "" {
+			*phone = os.Getenv("PHONE")
+		}
+
+		// Проверяем, что все необходимые параметры заданы
+		if *appID == 0 || *appHash == "" || *phone == "" {
+			printEventsHelp(eventsFlags)
+			return Config{Command: command}, fmt.Errorf("required parameters missing: provide app-id, app-hash, and phone via flags or environment variables")
+		}
+
+		// Создаем и возвращаем конфигурацию
+		return Config{
+			Command: command,
+			AuthConfig: AuthConfig{
+				AppID:       *appID,
+				AppHash:     *appHash,
+				Phone:       *phone,
+				SessionFile: *sessionFile,
+			},
+			Timeout: *timeout,
+		}, nil
+	}
+
 	// Неизвестная команда
 	return Config{Command: CommandUnknown}, fmt.Errorf("unknown command: %s", command)
 }
@@ -205,6 +265,7 @@ func PrintHelp() {
 	fmt.Println("  login      Authenticate with Telegram and save session file")
 	fmt.Println("  chats      Get list of all chats in JSON format")
 	fmt.Println("  messages   Get messages from a specific chat in JSON format")
+	fmt.Println("  events     Listen for Telegram events and print them in JSON format")
 	fmt.Println("  help       Display this help message")
 	fmt.Println("  test       Run a test to check if application works properly")
 	fmt.Println("\nExamples:")
@@ -217,6 +278,8 @@ func PrintHelp() {
 	fmt.Println("    ./telegram-auth chats")
 	fmt.Println("\n  Get messages from a chat:")
 	fmt.Println("    ./telegram-auth messages --chat-id=-1001234567890 --limit=50")
+	fmt.Println("\n  Listen for Telegram events:")
+	fmt.Println("    ./telegram-auth events --timeout=600")
 	fmt.Println("\n  Show help for login command:")
 	fmt.Println("    ./telegram-auth login --help")
 }
@@ -269,4 +332,23 @@ func printMessagesHelp(fs *flag.FlagSet) {
 	fmt.Println("  - Chat ID is required and must be specified via --chat-id flag or CHAT_ID environment variable")
 	fmt.Println("  - Use the 'chats' command to get the list of available chats and their IDs")
 	fmt.Println("  - Chat IDs for groups and channels are usually negative numbers")
+}
+
+// printEventsHelp выводит справку по команде events
+func printEventsHelp(fs *flag.FlagSet) {
+	fmt.Println("Telegram Authentication Client - Events")
+	fmt.Println("-------------------------------------")
+	fmt.Println("Listen for Telegram events and print them in JSON format.")
+	fmt.Println("\nUsage:")
+	fmt.Println("  telegram-auth events [options]")
+	fmt.Println("\nOptions:")
+	fs.PrintDefaults()
+	fmt.Println("\nEnvironment Variables:")
+	fmt.Println("  APP_ID   - Telegram app ID")
+	fmt.Println("  APP_HASH - Telegram app hash")
+	fmt.Println("  PHONE    - Phone number in international format")
+	fmt.Println("\nNotes:")
+	fmt.Println("  - Press Ctrl+C to stop listening for events")
+	fmt.Println("  - Set timeout to automatically stop after specified number of seconds")
+	fmt.Println("  - Events are printed in JSON format to stdout")
 }
