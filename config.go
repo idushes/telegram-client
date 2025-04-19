@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // CommandType представляет тип команды
@@ -18,6 +19,8 @@ const (
 	CommandTest CommandType = "test"
 	// CommandChats команда получения списка чатов
 	CommandChats CommandType = "chats"
+	// CommandMessages команда получения сообщений из чата
+	CommandMessages CommandType = "messages"
 	// CommandUnknown неизвестная команда
 	CommandUnknown CommandType = "unknown"
 )
@@ -26,6 +29,8 @@ const (
 type Config struct {
 	Command    CommandType
 	AuthConfig AuthConfig
+	ChatID     int64 // ID чата для команды messages
+	Limit      int   // Ограничение на количество сообщений
 }
 
 // ParseConfig парсит команды и параметры командной строки
@@ -110,6 +115,81 @@ func ParseConfig() (Config, error) {
 		}, nil
 	}
 
+	// Если это команда messages
+	if command == CommandMessages {
+		// Создаем новый набор флагов для аргументов
+		messagesFlags := flag.NewFlagSet(string(command), flag.ExitOnError)
+		appID := messagesFlags.Int("app-id", 0, "Telegram app ID")
+		appHash := messagesFlags.String("app-hash", "", "Telegram app hash")
+		phone := messagesFlags.String("phone", "", "Phone number in international format")
+		sessionFile := messagesFlags.String("session-file", "tg-session.json", "Path to session file")
+		chatID := messagesFlags.Int64("chat-id", 0, "Chat ID to get messages from")
+		limit := messagesFlags.Int("limit", 20, "Maximum number of messages to retrieve")
+		help := messagesFlags.Bool("help", false, "Show help for command")
+
+		// Парсим аргументы после команды
+		err := messagesFlags.Parse(os.Args[2:])
+		if err != nil {
+			return Config{Command: command}, err
+		}
+
+		// Если запрошена справка
+		if *help {
+			printMessagesHelp(messagesFlags)
+			os.Exit(0)
+		}
+
+		// Проверяем переменные окружения
+		if *appID == 0 {
+			if envID := os.Getenv("APP_ID"); envID != "" {
+				fmt.Sscanf(envID, "%d", appID)
+			}
+		}
+
+		if *appHash == "" {
+			*appHash = os.Getenv("APP_HASH")
+		}
+
+		if *phone == "" {
+			*phone = os.Getenv("PHONE")
+		}
+
+		// Проверяем chat-id из переменной окружения
+		if *chatID == 0 {
+			if envChatID := os.Getenv("CHAT_ID"); envChatID != "" {
+				chatIDVal, err := strconv.ParseInt(envChatID, 10, 64)
+				if err == nil {
+					*chatID = chatIDVal
+				}
+			}
+		}
+
+		// Проверяем, что все необходимые параметры заданы
+		if *appID == 0 || *appHash == "" || *phone == "" {
+			printMessagesHelp(messagesFlags)
+			return Config{Command: command}, fmt.Errorf("required parameters missing: provide app-id, app-hash, and phone via flags or environment variables")
+		}
+
+		// Проверяем, что указан chat-id
+		if *chatID == 0 {
+			printMessagesHelp(messagesFlags)
+			return Config{Command: command}, fmt.Errorf("chat-id is required")
+		}
+
+		// Создаем и возвращаем конфигурацию
+		return Config{
+			Command: command,
+			AuthConfig: AuthConfig{
+				AppID:       *appID,
+				AppHash:     *appHash,
+				Phone:       *phone,
+				SessionFile: *sessionFile,
+			},
+			ChatID: *chatID,
+			Limit:  *limit,
+		}, nil
+	}
+
 	// Неизвестная команда
 	return Config{Command: CommandUnknown}, fmt.Errorf("unknown command: %s", command)
 }
@@ -124,6 +204,7 @@ func PrintHelp() {
 	fmt.Println("\nCommands:")
 	fmt.Println("  login      Authenticate with Telegram and save session file")
 	fmt.Println("  chats      Get list of all chats in JSON format")
+	fmt.Println("  messages   Get messages from a specific chat in JSON format")
 	fmt.Println("  help       Display this help message")
 	fmt.Println("  test       Run a test to check if application works properly")
 	fmt.Println("\nExamples:")
@@ -134,6 +215,8 @@ func PrintHelp() {
 	fmt.Println("    export APP_HASH=abcdef1234567890abcdef")
 	fmt.Println("    export PHONE=+1234567890")
 	fmt.Println("    ./telegram-auth chats")
+	fmt.Println("\n  Get messages from a chat:")
+	fmt.Println("    ./telegram-auth messages --chat-id=-1001234567890 --limit=50")
 	fmt.Println("\n  Show help for login command:")
 	fmt.Println("    ./telegram-auth login --help")
 }
@@ -166,4 +249,24 @@ func printChatsHelp(fs *flag.FlagSet) {
 	fmt.Println("  APP_ID   - Telegram app ID")
 	fmt.Println("  APP_HASH - Telegram app hash")
 	fmt.Println("  PHONE    - Phone number in international format")
+}
+
+// printMessagesHelp выводит справку по команде messages
+func printMessagesHelp(fs *flag.FlagSet) {
+	fmt.Println("Telegram Authentication Client - Messages")
+	fmt.Println("---------------------------------------")
+	fmt.Println("Get messages from a specific chat in JSON format.")
+	fmt.Println("\nUsage:")
+	fmt.Println("  telegram-auth messages [options]")
+	fmt.Println("\nOptions:")
+	fs.PrintDefaults()
+	fmt.Println("\nEnvironment Variables:")
+	fmt.Println("  APP_ID   - Telegram app ID")
+	fmt.Println("  APP_HASH - Telegram app hash")
+	fmt.Println("  PHONE    - Phone number in international format")
+	fmt.Println("  CHAT_ID  - Chat ID to get messages from")
+	fmt.Println("\nNotes:")
+	fmt.Println("  - Chat ID is required and must be specified via --chat-id flag or CHAT_ID environment variable")
+	fmt.Println("  - Use the 'chats' command to get the list of available chats and their IDs")
+	fmt.Println("  - Chat IDs for groups and channels are usually negative numbers")
 }

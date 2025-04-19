@@ -29,6 +29,12 @@ func main() {
 			fmt.Printf("Failed to get chats: %v\n", err)
 			os.Exit(1)
 		}
+	case CommandMessages:
+		// Получение сообщений из чата
+		if err := runMessages(config.AuthConfig, config.ChatID, config.Limit); err != nil {
+			fmt.Printf("Failed to get messages: %v\n", err)
+			os.Exit(1)
+		}
 	case CommandHelp:
 		// Показать справку
 		PrintHelp()
@@ -61,4 +67,14 @@ func runChats(authConfig AuthConfig) error {
 
 	// Run chats retrieval
 	return GetChats(ctx, authConfig)
+}
+
+// runMessages выполняет получение сообщений из чата
+func runMessages(authConfig AuthConfig, chatID int64, limit int) error {
+	// Create context with signal handling
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	// Run messages retrieval
+	return GetMessages(ctx, authConfig, chatID, limit)
 }
