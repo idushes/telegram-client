@@ -77,8 +77,8 @@ func GetChats(ctx context.Context, config AuthConfig) error {
 				return fmt.Errorf("failed to get dialogs: %w", err)
 			}
 
-			// Преобразуем полученные данные
-			dialogs, err := extractChats(dialogsClass)
+			// Преобразуем полученные данные - параметр 0 не используется в этом вызове
+			dialogs, err := extractChats(dialogsClass, 0)
 			if err != nil {
 				return fmt.Errorf("failed to extract chats: %w", err)
 			}
@@ -113,7 +113,7 @@ func GetChats(ctx context.Context, config AuthConfig) error {
 }
 
 // extractChats извлекает информацию о чатах из ответа API
-func extractChats(dialogsClass tg.MessagesDialogsClass) (*ChatsResponse, error) {
+func extractChats(dialogsClass tg.MessagesDialogsClass, chatID int64) (*ChatsResponse, error) {
 	var dialogs []tg.DialogClass
 	var chats []tg.ChatClass
 	var users []tg.UserClass
@@ -177,8 +177,10 @@ func extractChats(dialogsClass tg.MessagesDialogsClass) (*ChatsResponse, error) 
 			// Это групповой чат
 			if chat, ok := chatMap[peer.ChatID]; ok {
 				if c, ok := chat.(*tg.Chat); ok {
+					// Для обычного чата используем отрицательный ID
+					chatID := -c.ID
 					info = ChatInfo{
-						ID:      c.GetID(),
+						ID:      chatID, // Отрицательный ID для обычного чата
 						Title:   c.Title,
 						Type:    "chat",
 						Members: int(c.ParticipantsCount),
@@ -193,8 +195,10 @@ func extractChats(dialogsClass tg.MessagesDialogsClass) (*ChatsResponse, error) 
 					if c.Megagroup {
 						channelType = "supergroup"
 					}
+					// Для канала используем ID вида -100XXXXXXXXXX
+					chatID := -1000000000000 - c.ID
 					info = ChatInfo{
-						ID:       c.GetID(),
+						ID:       chatID, // ID с префиксом -100 для канала
 						Title:    c.Title,
 						Type:     channelType,
 						Username: c.Username,
